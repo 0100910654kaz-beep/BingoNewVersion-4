@@ -27,7 +27,7 @@ public class BingoServlet extends HttpServlet {
         
         BingoGame game = (BingoGame) application.getAttribute("game");
 
-        // ⏱️ 1. 定期自動期限チェック（すでに動いている部屋がある場合のみ）
+        // ⏱️ 1. 定期自動期限チェック
         if (game != null) {
             if (game.isExpired() || game.isPast2HoursFromLastBingo()) {
                 application.removeAttribute("game");
@@ -35,15 +35,16 @@ public class BingoServlet extends HttpServlet {
             }
         }
 
-        // 🚀 2. 【大山さん最優先】まだ部屋がない状態なら、絶対に「大山さん専用の日数設定画面」を表示します！
-        // 変な自動作成は一切せず、大山さんが文字を入力して緑のボタンを押すのをじっと待ちます。
-        if (game == null && !"create".equals(action)) {
-            request.setAttribute("game", null);
+        // 🚀 2. 【大山さんの理想を実現！】
+        // アクション（ボタン操作）が何も指定されていない場合（＝大山さんがURLをただ開いた時）は、
+        // 過去の部屋の状態に関係なく、毎回必ず「大山専用ページ（日数設定画面）」をまっさらに開きます！
+        if (action == null || action.trim().isEmpty()) {
+            request.setAttribute("game", null); // 画面をまっさらにするおまじない
             request.getRequestDispatcher("admin.jsp").forward(request, response);
             return;
         }
 
-        // 🟢 3. 大山さんが画面で日数（3や8）を入力し、緑のボタンを押した時の処理
+        // 🟢 3. 大山さんが画面で日数を入力し、緑のボタンを押した時の処理
         if ("create".equals(action)) {
             String validDaysStr = request.getParameter("validDays");
             int validDays = 8; 
@@ -77,8 +78,7 @@ public class BingoServlet extends HttpServlet {
             return;
         }
 
-        // 🔄 4. 【新機能】リセットボタンが押された時の挙動
-        // 部屋を消さずに、IDとタイマーをがっちり維持したまま、参加者や履歴だけをパッとお掃除します。
+        // 🔄 4. 幹事さんがリセットボタンを押した時の挙動（ID・期限キープでお掃除）
         if ("reset".equals(action)) {
             if (game != null) {
                 game.clearGameDataOnly();
@@ -88,7 +88,7 @@ public class BingoServlet extends HttpServlet {
             return;
         }
 
-        // 🎲 5. 次の数字を引く
+        // 🎲 5. 幹事さんが次の数字を引く
         if ("draw".equals(action)) {
             if (game != null) {
                 game.drawNumber();
@@ -157,6 +157,7 @@ public class BingoServlet extends HttpServlet {
             return;
         }
 
+        // 7. その他の予期せぬアクセス
         String userType = request.getParameter("userType");
         request.setAttribute("game", game);
         

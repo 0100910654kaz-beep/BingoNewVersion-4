@@ -27,7 +27,15 @@ public class BingoServlet extends HttpServlet {
         
         BingoGame game = (BingoGame) application.getAttribute("game");
 
-        // 🚀 新規部屋作成（大山さんが仕込む時の処理）
+        // 自動期限チェック
+        if (game != null) {
+            if (game.isExpired() || game.isPast2HoursFromLastBingo()) {
+                application.removeAttribute("game");
+                game = null;
+            }
+        }
+
+        // 🚀 新規部屋作成
         if ("create".equals(action)) {
             String validDaysStr = request.getParameter("validDays");
             int validDays = 8; 
@@ -54,7 +62,6 @@ public class BingoServlet extends HttpServlet {
                 newGameId = String.valueOf(random4Digit);
             }
             
-            // 完全新規でお部屋を作成
             game = new BingoGame(newGameId, validDays);
             application.setAttribute("game", game);
             request.setAttribute("game", game);
@@ -62,23 +69,14 @@ public class BingoServlet extends HttpServlet {
             return;
         }
 
-        // 🔄 幹事さんがリセットボタンを押した時の処理（アイデア②の核心部分！）
+        // 🔄 リセットボタンの新しい挙動（IDとタイマーは残してお掃除）
         if ("reset".equals(action)) {
             if (game != null) {
-                // IDと有効期限の残り時間はそのままキープし、中のゲームデータだけをお掃除（クリア）する
                 game.clearGameDataOnly();
             }
             request.setAttribute("game", game);
             request.getRequestDispatcher("admin.jsp").forward(request, response);
             return;
-        }
-
-        // 定期自動チェック（時間切れの部屋を削除）
-        if (game != null) {
-            if (game.isExpired() || game.isPast2HoursFromLastBingo()) {
-                application.removeAttribute("game");
-                game = null;
-            }
         }
 
         // 🎲 次の数字を引く
@@ -97,7 +95,7 @@ public class BingoServlet extends HttpServlet {
             String playerName = request.getParameter("playerName");
             
             if (playerName == null || playerName.trim().isEmpty()) {
-                playerName = "";
+                playerName = "ゲスト";
             } else {
                 playerName = playerName.trim();
             }
@@ -107,7 +105,14 @@ public class BingoServlet extends HttpServlet {
                 List<List<String>> bingoCard = (List<List<String>>) session.getAttribute("card");
 
                 if (confirmedName == null || !confirmedName.equals(playerName) || bingoCard == null) {
-                    confirmedName = game.registerPlayer(playerName);
+                    confirmedName = game.getGameId() + "_" + playerName; 
+                    
+                    // 名前の重複防止対策（簡易版）
+                    if (game.getWaitNumbers(playerName) != null && !playerName.equals("ゲスト")) {
+                        confirmedName = playerName;
+                    } else {
+                        confirmedName = playerName;
+                    }
                     
                     List<List<String>> card = new ArrayList<>();
                     List<List<Integer>> columns = new ArrayList<>();

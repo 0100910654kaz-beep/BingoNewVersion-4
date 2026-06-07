@@ -27,7 +27,7 @@ public class BingoServlet extends HttpServlet {
         
         BingoGame game = (BingoGame) application.getAttribute("game");
 
-        // 自動期限チェック
+        // 定期自動期限チェック
         if (game != null) {
             if (game.isExpired() || game.isPast2HoursFromLastBingo()) {
                 application.removeAttribute("game");
@@ -35,7 +35,15 @@ public class BingoServlet extends HttpServlet {
             }
         }
 
-        // 🚀 新規部屋作成
+        // 💡 【超重要】まだ部屋が作られていない場合、かつ部屋作成命令（create）でもない時は、
+        // 3日や8日を設定する「いつもの初期画面」をそのまま表示して終了するガード処理です。
+        if (game == null && !"create".equals(action)) {
+            request.setAttribute("game", null);
+            request.getRequestDispatcher("admin.jsp").forward(request, response);
+            return;
+        }
+
+        // 🚀 新規部屋作成（大山さんが日数を選んでボタンを押した時の処理）
         if ("create".equals(action)) {
             String validDaysStr = request.getParameter("validDays");
             int validDays = 8; 
@@ -47,7 +55,7 @@ public class BingoServlet extends HttpServlet {
                 }
             }
             
-            // 簡単な4桁IDを抽選
+            // 簡単な4桁IDを自動抽選
             String newGameId = "1111"; 
             if (Math.random() < 0.10) {
                 String[] easyNumbers = {
@@ -69,7 +77,7 @@ public class BingoServlet extends HttpServlet {
             return;
         }
 
-        // 🔄 リセットボタンの新しい挙動（IDとタイマーは残してお掃除）
+        // 🔄 リセットボタンの新しい挙動（アイデア②：IDとタイマーは残してお掃除）
         if ("reset".equals(action)) {
             if (game != null) {
                 game.clearGameDataOnly();
@@ -105,14 +113,7 @@ public class BingoServlet extends HttpServlet {
                 List<List<String>> bingoCard = (List<List<String>>) session.getAttribute("card");
 
                 if (confirmedName == null || !confirmedName.equals(playerName) || bingoCard == null) {
-                    confirmedName = game.getGameId() + "_" + playerName; 
-                    
-                    // 名前の重複防止対策（簡易版）
-                    if (game.getWaitNumbers(playerName) != null && !playerName.equals("ゲスト")) {
-                        confirmedName = playerName;
-                    } else {
-                        confirmedName = playerName;
-                    }
+                    confirmedName = playerName;
                     
                     List<List<String>> card = new ArrayList<>();
                     List<List<Integer>> columns = new ArrayList<>();

@@ -29,23 +29,26 @@ public class BingoGame implements Serializable {
         this.bingoPlayers = new CopyOnWriteArrayList<>();
         this.reachPlayers = new CopyOnWriteArrayList<>();
         this.allPlayers = new CopyOnWriteArrayList<>();
-        this.lastBingoTime = new Date(); // 初期値として現在の時刻を設定
+        
+        // 💡 【ここが重要！】部屋を作った「たった今」の時刻をタイマーのスタートラインにセットします
+        this.lastBingoTime = new Date(); 
 
         Calendar cal = Calendar.getInstance();
         cal.add(Calendar.DAY_OF_MONTH, validDays);
         this.expireTime = cal.getTime();
     }
 
-    // 💡 アイデア②：IDと有効期限（タイマー）は一切変えず、ゲーム進行データだけをクリアする
+    // ゲーム進行データだけをクリアする（IDとタイマーは維持）
     public void clearGameDataOnly() {
-        this.drawnNumbers.clear();       // 出た数字の履歴をゼロに
-        this.bingoPlayers.clear();       // ビンゴ達成者一覧をゼロに
-        this.reachPlayers.clear();       // リーチの人一覧をゼロに
-        this.allPlayers.clear();         // 参加プレイヤーリストをゼロに
-        this.playerCards.clear();        // プレイヤーのカードデータをゼロに
-        this.playerWaitNumbers.clear();  // プレイヤーの待ち番号データをゼロに
+        this.drawnNumbers.clear();       
+        this.bingoPlayers.clear();       
+        this.reachPlayers.clear();       
+        this.allPlayers.clear();         
+        this.playerCards.clear();        
+        this.playerWaitNumbers.clear();  
         
-        this.lastBingoTime = new Date(); // 最新操作時刻をリセットした「今」に更新
+        // 💡 リセットした「たった今」の時刻をタイマーのスタートラインに更新します
+        this.lastBingoTime = new Date(); 
     }
 
     public int drawNumber() {
@@ -61,7 +64,8 @@ public class BingoGame implements Serializable {
         int nextNum = pool.get(0);
         drawnNumbers.add(nextNum);
         
-        this.lastBingoTime = new Date(); // 数字を引いた時刻を更新
+        // 💡 数字を引いた「たった今」の時刻に更新します
+        this.lastBingoTime = new Date(); 
         
         updateAllPlayersStatus();
         return nextNum;
@@ -81,7 +85,6 @@ public class BingoGame implements Serializable {
             if (waits.isEmpty()) {
                 addBingoPlayer(name, currentDrawnNumber);
             } else if (waits.size() == 1 || waits.size() == 2 || waits.size() == 3 || waits.size() == 4) {
-                // 待ち番号がある場合はリーチ判定
                 boolean hasRealReach = checkActualReachLines(card);
                 if (hasRealReach) {
                     addReachPlayer(name);
@@ -141,7 +144,7 @@ public class BingoGame implements Serializable {
         }
         Date now = new Date();
         bingoPlayers.add(0, new PlayerResult(name, now, currentDrawnNumber));
-        this.lastBingoTime = now;
+        this.lastBingoTime = now; // ビンゴが出た時刻をタイマーに更新
         removeReachPlayer(name);
     }
 
@@ -163,7 +166,10 @@ public class BingoGame implements Serializable {
     public boolean isExpired() { return new Date().after(this.expireTime); }
     
     public boolean isPast2HoursFromLastBingo() {
-        if (bingoPlayers.isEmpty()) return false;
+        // 💡 【暴走対策】まだ誰もビンゴしていない、かつ数字も引いていない初期状態なら、
+        // 2時間判定をスルーして安全にゲームを続行させます。
+        if (drawnNumbers.isEmpty() && bingoPlayers.isEmpty()) return false;
+        
         long twoHoursInMilliseconds = 2L * 60 * 60 * 1000;
         long timePassed = new Date().getTime() - lastBingoTime.getTime();
         return timePassed > twoHoursInMilliseconds;

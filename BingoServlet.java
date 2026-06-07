@@ -27,23 +27,7 @@ public class BingoServlet extends HttpServlet {
         
         BingoGame game = (BingoGame) application.getAttribute("game");
 
-        // 定期自動期限チェック
-        if (game != null) {
-            if (game.isExpired() || game.isPast2HoursFromLastBingo()) {
-                application.removeAttribute("game");
-                game = null;
-            }
-        }
-
-        // 💡 【超重要】まだ部屋が作られていない場合、かつ部屋作成命令（create）でもない時は、
-        // 3日や8日を設定する「いつもの初期画面」をそのまま表示して終了するガード処理です。
-        if (game == null && !"create".equals(action)) {
-            request.setAttribute("game", null);
-            request.getRequestDispatcher("admin.jsp").forward(request, response);
-            return;
-        }
-
-        // 🚀 新規部屋作成（大山さんが日数を選んでボタンを押した時の処理）
+        // 🚀 1. 【最優先判定】部屋作成命令（create）が来たら、他の全てを無視して即座に4桁ID部屋を作ります！
         if ("create".equals(action)) {
             String validDaysStr = request.getParameter("validDays");
             int validDays = 8; 
@@ -77,27 +61,38 @@ public class BingoServlet extends HttpServlet {
             return;
         }
 
-        // 🔄 リセットボタンの新しい挙動（アイデア②：IDとタイマーは残してお掃除）
+        // 定期自動期限チェック（すでに動いている部屋がある場合のみ動作）
+        if (game != null) {
+            if (game.isExpired() || game.isPast2HoursFromLastBingo()) {
+                application.removeAttribute("game");
+                game = null;
+            }
+        }
+
+        // 💡 2. 部屋がまだ存在しない（かつ作成命令でもない）場合は、あの添付の初期画面を表示します
+        if (game == null) {
+            request.setAttribute("game", null);
+            request.getRequestDispatcher("admin.jsp").forward(request, response);
+            return;
+        }
+
+        // 🔄 3. リセットボタンの新しい挙動（アイデア②：IDとタイマーは残してお掃除）
         if ("reset".equals(action)) {
-            if (game != null) {
-                game.clearGameDataOnly();
-            }
+            game.clearGameDataOnly();
             request.setAttribute("game", game);
             request.getRequestDispatcher("admin.jsp").forward(request, response);
             return;
         }
 
-        // 🎲 次の数字を引く
+        // 🎲 4. 次の数字を引く
         if ("draw".equals(action)) {
-            if (game != null) {
-                game.drawNumber();
-            }
+            game.drawNumber();
             request.setAttribute("game", game);
             request.getRequestDispatcher("admin.jsp").forward(request, response);
             return;
         }
 
-        // 👥 プレイヤーの参加処理
+        // 👥 5. プレイヤーの参加処理
         if ("join".equals(action)) {
             String inputId = request.getParameter("gameId");
             String playerName = request.getParameter("playerName");
@@ -108,7 +103,7 @@ public class BingoServlet extends HttpServlet {
                 playerName = playerName.trim();
             }
 
-            if (game != null && game.getGameId().equals(inputId)) {
+            if (game.getGameId().equals(inputId)) {
                 String confirmedName = (String) session.getAttribute("myConfirmedName");
                 List<List<String>> bingoCard = (List<List<String>>) session.getAttribute("card");
 

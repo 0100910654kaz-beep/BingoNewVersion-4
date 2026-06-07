@@ -27,7 +27,7 @@ public class BingoServlet extends HttpServlet {
         
         BingoGame game = (BingoGame) application.getAttribute("game");
 
-        // ⏱️ 1. 定期自動期限チェック（すでに部屋がある場合のみ）
+        // ⏱️ 1. 定期自動期限チェック（すでに動いている部屋がある場合のみ）
         if (game != null) {
             if (game.isExpired() || game.isPast2HoursFromLastBingo()) {
                 application.removeAttribute("game");
@@ -35,8 +35,8 @@ public class BingoServlet extends HttpServlet {
             }
         }
 
-        // 🚀 2. 【最優先】まだ部屋がない状態なら、絶対に「大山さん専用の日数設定画面」を表示して処理を止めます！
-        // 変な自動作成は一切せず、大山さんが文字を入力してボタンを押すのをじっと待ちます。
+        // 🚀 2. 【大山さん最優先】まだ部屋がない状態なら、絶対に「大山さん専用の日数設定画面」を表示します！
+        // 変な自動作成は一切せず、大山さんが文字を入力して緑のボタンを押すのをじっと待ちます。
         if (game == null && !"create".equals(action)) {
             request.setAttribute("game", null);
             request.getRequestDispatcher("admin.jsp").forward(request, response);
@@ -77,8 +77,8 @@ public class BingoServlet extends HttpServlet {
             return;
         }
 
-        // 🔄 4. 【今回の目玉】リセットボタンが押された時の新しい挙動
-        // 部屋を消さずに、IDとタイマーをがっちり維持したまま、中身だけをパッとお掃除します。
+        // 🔄 4. 【新機能】リセットボタンが押された時の挙動
+        // 部屋を消さずに、IDとタイマーをがっちり維持したまま、参加者や履歴だけをパッとお掃除します。
         if ("reset".equals(action)) {
             if (game != null) {
                 game.clearGameDataOnly();

@@ -22,6 +22,7 @@ public class BingoServlet extends HttpServlet {
         
         request.setCharacterEncoding("UTF-8");
         String action = request.getParameter("action");
+        String userType = request.getParameter("userType"); // 💡 userTypeを上でしっかり読み込みます
         ServletContext application = getServletContext();
         HttpSession session = request.getSession();
         
@@ -35,10 +36,10 @@ public class BingoServlet extends HttpServlet {
             }
         }
 
-        // 🚀 2. 【大山さんの理想を実現！】
-        // アクション（ボタン操作）が何も指定されていない場合（＝大山さんがURLをただ開いた時）は、
-        // 過去の部屋の状態に関係なく、毎回必ず「大山専用ページ（日数設定画面）」をまっさらに開きます！
-        if (action == null || action.trim().isEmpty()) {
+        // 🚀 2. 【大山さんの理想を完璧に実現（バグ修正版）】
+        // アクション（ボタン操作）が何も指定されておらず、かつ、5秒更新（userType=admin）でもない場合、
+        // つまり「大山さんがブラウザにURLを直接打ち込んで新しく開いた時」だけ、100%確実に初期画面をまっさらに開きます！
+        if ((action == null || action.trim().isEmpty()) && !"admin".equals(userType)) {
             request.setAttribute("game", null); // 画面をまっさらにするおまじない
             request.getRequestDispatcher("admin.jsp").forward(request, response);
             return;
@@ -157,8 +158,7 @@ public class BingoServlet extends HttpServlet {
             return;
         }
 
-        // 7. その他の予期せぬアクセス
-        String userType = request.getParameter("userType");
+        // 7. その他のアクセス（5秒更新などの処理）
         request.setAttribute("game", game);
         
         if ("admin".equals(userType)) {

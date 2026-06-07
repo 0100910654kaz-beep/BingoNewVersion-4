@@ -1,264 +1,183 @@
 package servlet;
 
+import java.io.Serializable;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.Calendar;
+import java.util.Date;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ConcurrentHashMap;
 
-public class BingoGame {
-    private String gameId;
-    private List<Integer> bingoNumbers;
-    private List<Integer> drawnNumbers;
-    private long createdAt;
-    private long expiresAt; 
-    private long lastBingoAt;
+public class BingoGame implements Serializable {
+    private static final long serialVersionUID = 1L;
 
-    private List<String> originalPlayers = new CopyOnWriteArrayList<>();
-    private Map<String, String> uniquePlayerMap = new ConcurrentHashMap<>();
-    private List<PlayerResult> bingoPlayers = new CopyOnWriteArrayList<>();
-    private Map<String, List<List<String>>> playerCards = new ConcurrentHashMap<>();
+    private String gameId;                             
+    private List<Integer> drawnNumbers;                
+    private List<PlayerResult> bingoPlayers;           
+    private List<PlayerResult> reachPlayers;           
+    private List<String> allPlayers;                   
+    private Date expireTime;                           
+    private Date lastBingoTime;                        
+    private int anonymousCount = 0;                    
+
+    private ConcurrentHashMap<String, List<List<String>>> playerCards = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<String, List<String>> playerWaitNumbers = new ConcurrentHashMap<>();
 
     public BingoGame(String gameId, int validDays) {
         this.gameId = gameId;
-        this.createdAt = System.currentTimeMillis();
-        this.expiresAt = this.createdAt + ((long) validDays * 24 * 60 * 60 * 1000); 
-        this.lastBingoAt = System.currentTimeMillis();
-
-        this.bingoNumbers = new ArrayList<>();
-        for (int i = 1; i <= 75; i++) {
-            bingoNumbers.add(i);
-        }
-        Collections.shuffle(bingoNumbers);
         this.drawnNumbers = new CopyOnWriteArrayList<>();
+        this.bingoPlayers = new CopyOnWriteArrayList<>();
+        this.reachPlayers = new CopyOnWriteArrayList<>();
+        this.allPlayers = new CopyOnWriteArrayList<>();
+        this.lastBingoTime = new Date(); // 初期値として現在の時刻を設定
+
+        Calendar cal = Calendar.getInstance();
+        cal.add(Calendar.DAY_OF_MONTH, validDays);
+        this.expireTime = cal.getTime();
     }
 
-    // 💡 アイデア②のための新機能：IDと有効期限を残したまま、ゲームデータだけをお掃除する
+    // 💡 アイデア②：IDと有効期限（タイマー）は一切変えず、ゲーム進行データだけをクリアする
     public void clearGameDataOnly() {
-        // 出た数字の履歴をゼロに戻す
-        this.drawnNumbers.clear();
+        this.drawnNumbers.clear();       // 出た数字の履歴をゼロに
+        this.bingoPlayers.clear();       // ビンゴ達成者一覧をゼロに
+        this.reachPlayers.clear();       // リーチの人一覧をゼロに
+        this.allPlayers.clear();         // 参加プレイヤーリストをゼロに
+        this.playerCards.clear();        // プレイヤーのカードデータをゼロに
+        this.playerWaitNumbers.clear();  // プレイヤーの待ち番号データをゼロに
         
-        // 残りの玉の山を新しくシャッフルして作り直す
-        this.bingoNumbers.clear();
+        this.lastBingoTime = new Date(); // 最新操作時刻をリセットした「今」に更新
+    }
+
+    public int drawNumber() {
+        List<Integer> pool = new ArrayList<>();
         for (int i = 1; i <= 75; i++) {
-            bingoNumbers.add(i);
+            if (!drawnNumbers.contains(i)) {
+                pool.add(i);
+            }
         }
-        Collections.shuffle(bingoNumbers);
-
-        // 参加者、ビンゴ・リーチ情報、カード情報をすべて綺麗にクリア
-        this.originalPlayers.clear();
-        this.uniquePlayerMap.clear();
-        this.bingoPlayers.clear();
-        this.playerCards.clear();
-
-        // 最後に操作された時刻を今に更新
-        this.lastBingoAt = System.currentTimeMillis();
+        if (pool.isEmpty()) return -1;
+        
+        java.util.Collections.shuffle(pool);
+        int nextNum = pool.get(0);
+        drawnNumbers.add(nextNum);
+        
+        this.lastBingoTime = new Date(); // 数字を引いた時刻を更新
+        
+        updateAllPlayersStatus();
+        return nextNum;
     }
 
-    public synchronized int drawNumber() {
-        if (!bingoNumbers.isEmpty()) {
-            int num = bingoNumbers.remove(0);
-            drawnNumbers.add(num);
-            this.lastBingoAt = System.currentTimeMillis();
-            return num;
+    private void updateAllPlayersStatus() {
+        bingoPlayers.clear();
+        reachPlayers.clear();
+        
+        int currentDrawnNumber = drawnNumbers.isEmpty() ? -1 : drawnNumbers.get(drawnNumbers.size() - 1);
+
+        for (String name : playerCards.keySet()) {
+            List<List<String>> card = playerCards.get(name);
+            List<String> waits = calculateWaitNumbers(card);
+            playerWaitNumbers.put(name, waits);
+
+            if (waits.isEmpty()) {
+                addBingoPlayer(name, currentDrawnNumber);
+            } else if (waits.size() == 1 || waits.size() == 2 || waits.size() == 3 || waits.size() == 4) {
+                // 待ち番号がある場合はリーチ判定
+                boolean hasRealReach = checkActualReachLines(card);
+                if (hasRealReach) {
+                    addReachPlayer(name);
+                }
+            }
         }
-        return -1;
     }
 
-    public String getGameId() { return gameId; }
-    public List<Integer> getDrawnNumbers() { return drawnNumbers; }
-    public int getPlayerCount() { return uniquePlayerMap.size(); }
-    public List<PlayerResult> getBingoPlayers() { return bingoPlayers; }
-
-    public boolean isExpired() {
-        return System.currentTimeMillis() > this.expiresAt;
-    }
-
-    public boolean isPast2HoursFromLastBingo() {
-        long twoHours = 2 * 60 * 60 * 1000;
-        return (System.currentTimeMillis() - this.lastBingoAt) > twoHours;
-    }
-
-    public synchronized String registerPlayer(String baseName) {
-        if (baseName == null || baseName.trim().isEmpty()) {
-            baseName = "ゲスト";
-        }
-        originalPlayers.add(baseName);
-        int count = 0;
-        for (String p : originalPlayers) {
-            if (p.equals(baseName)) count++;
-        }
-        String uniqueName = baseName;
-        if (count > 1) {
-            uniqueName = baseName + count;
-        }
-        uniquePlayerMap.put(uniqueName, baseName);
-        return uniqueName;
-    }
-
-    public void setPlayerCard(String playerName, List<List<String>> card) {
-        playerCards.put(playerName, card);
-        checkPlayerStatus(playerName, card);
-    }
-
-    private void checkPlayerStatus(String playerName, List<List<String>> card) {
-        boolean hasBingo = false;
-        boolean hasReach = false;
-        int drawnNumberAtBingo = -1;
-
+    private boolean checkActualReachLines(List<List<String>> card) {
         for (int i = 0; i < 5; i++) {
-            if (checkLine(card.get(i))) { hasBingo = true; }
+            if (countHitInLine(card.get(i)) == 4) return true;
         }
-
         for (int c = 0; c < 5; c++) {
             List<String> col = new ArrayList<>();
             for (int r = 0; r < 5; r++) { col.add(card.get(r).get(c)); }
-            if (checkLine(col)) { hasBingo = true; }
+            if (countHitInLine(col) == 4) return true;
         }
-
-        List<String> diag1 = new ArrayList<>();
-        List<String> diag2 = new ArrayList<>();
+        List<String> d1 = new ArrayList<>();
+        List<String> d2 = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
-            diag1.add(card.get(i).get(i));
-            diag2.add(card.get(i).get(4 - i));
+            d1.add(card.get(i).get(i));
+            d2.add(card.get(i).get(4 - i));
         }
-        if (checkLine(diag1)) { hasBingo = true; }
-        if (checkLine(diag2)) { hasBingo = true; }
-
-        if (hasBingo) {
-            boolean alreadyRegistered = false;
-            for (PlayerResult pr : bingoPlayers) {
-                if (pr.getPlayerName().equals(playerName)) {
-                    alreadyRegistered = true;
-                    break;
-                }
-            }
-            if (!alreadyRegistered) {
-                if (!drawnNumbers.isEmpty()) {
-                    drawnNumberAtBingo = drawnNumbers.get(drawnNumbers.size() - 1);
-                }
-                bingoPlayers.add(new PlayerResult(playerName, true, false, drawnNumberAtBingo));
-            }
-            return;
-        }
-
-        for (int i = 0; i < 5; i++) { if (countHit(card.get(i)) == 4) { hasReach = true; } }
-        for (int c = 0; c < 5; c++) {
-            List<String> col = new ArrayList<>();
-            for (int r = 0; r < 5; r++) { col.add(card.get(r).get(c)); }
-            if (countHit(col) == 4) { hasReach = true; }
-        }
-        if (countHit(diag1) == 4) { hasReach = true; }
-        if (countHit(diag2) == 4) { hasReach = true; }
-
-        if (hasReach) {
-            boolean alreadyBingo = false;
-            for (PlayerResult pr : bingoPlayers) {
-                if (pr.getPlayerName().equals(playerName)) { alreadyBingo = true; break; }
-            }
-            if (!alreadyBingo) {
-                boolean alreadyReach = false;
-                for (PlayerResult pr : getReachPlayers()) {
-                    if (pr.getPlayerName().equals(playerName)) { alreadyReach = true; break; }
-                }
-                if (!alreadyReach) {
-                    // リーチ状態の保存ロジック（既存互換）
-                }
-            }
-        }
+        if (countHitInLine(d1) == 4) return true;
+        if (countHitInLine(d2) == 4) return true;
+        return false;
     }
 
-    private boolean checkLine(List<String> line) {
-        for (String cell : line) {
-            if ("0".equals(cell)) continue;
-            if (!drawnNumbers.contains(Integer.parseInt(cell))) return false;
-        }
-        return true;
-    }
-
-    private int countHit(List<String> line) {
+    private int countHitInLine(List<String> line) {
         int hit = 0;
         for (String cell : line) {
-            if ("0".equals(cell)) { hit++; continue; }
-            if (drawnNumbers.contains(Integer.parseInt(cell))) { hit++; }
+            if ("0".equals(cell) || drawnNumbers.contains(Integer.parseInt(cell))) {
+                hit++;
+            }
         }
         return hit;
     }
 
-    public List<PlayerResult> getReachPlayers() {
-        List<PlayerResult> reachList = new ArrayList<>();
-        for (Map.Entry<String, List<List<String>>> entry : playerCards.entrySet()) {
-            String name = entry.getKey();
-            List<List<String>> card = entry.getValue();
-            
-            boolean isBingo = false;
-            for (PlayerResult pr : bingoPlayers) {
-                if (pr.getPlayerName().equals(name)) { isBingo = true; break; }
-            }
-            if (isBingo) continue;
-
-            boolean hasReach = false;
-            for (int i = 0; i < 5; i++) { if (countHit(card.get(i)) == 4) hasReach = true; }
+    private List<String> calculateWaitNumbers(List<List<String>> card) {
+        List<String> waits = new ArrayList<>();
+        for (int r = 0; r < 5; r++) {
             for (int c = 0; c < 5; c++) {
-                List<String> col = new ArrayList<>();
-                for (int r = 0; r < 5; r++) { col.add(card.get(r).get(c)); }
-                if (countHit(col) == 4) hasReach = true;
-            }
-            List<String> diag1 = new ArrayList<>();
-            List<String> diag2 = new ArrayList<>();
-            for (int i = 0; i < 5; i++) {
-                diag1.add(card.get(i).get(i));
-                diag2.add(card.get(i).get(4 - i));
-            }
-            if (countHit(diag1) == 4) hasReach = true;
-            if (countHit(diag2) == 4) hasReach = true;
-
-            if (hasReach) {
-                reachList.add(new PlayerResult(name, false, true, -1));
-            }
-        }
-        return reachList;
-    }
-
-    public String getWaitNumbers(String playerName) {
-        List<List<String>> card = playerCards.get(playerName);
-        if (card == null) return "";
-        List<Integer> waits = new ArrayList<>();
-
-        for (int i = 0; i < 5; i++) { addWaitFromLine(card.get(i), waits); }
-        for (int c = 0; c < 5; c++) {
-            List<String> col = new ArrayList<>();
-            for (int r = 0; r < 5; r++) { col.add(card.get(r).get(c)); }
-            addWaitFromLine(col, waits);
-        }
-        List<String> diag1 = new ArrayList<>();
-        List<String> diag2 = new ArrayList<>();
-        for (int i = 0; i < 5; i++) {
-            diag1.add(card.get(i).get(i));
-            diag2.add(card.get(i).get(4 - i));
-        }
-        addWaitFromLine(diag1, waits);
-        addWaitFromLine(diag2, waits);
-
-        Collections.sort(waits);
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < waits.size(); i++) {
-            sb.append(waits.get(i));
-            if (i < waits.size() - 1) sb.append(", ");
-        }
-        return sb.toString();
-    }
-
-    private void addWaitFromLine(List<String> line, List<Integer> waits) {
-        if (countHit(line) == 4) {
-            for (String cell : line) {
-                if ("0".equals(cell)) continue;
-                int val = Integer.parseInt(cell);
-                if (!drawnNumbers.contains(val) && !waits.contains(val)) {
-                    waits.add(val);
+                String cell = card.get(r).get(c);
+                if (!"0".equals(cell) && !drawnNumbers.contains(Integer.parseInt(cell))) {
+                    if (!waits.contains(cell)) {
+                        waits.add(cell);
+                    }
                 }
             }
         }
+        return waits;
+    }
+
+    private void addBingoPlayer(String name, int currentDrawnNumber) {
+        for (PlayerResult p : bingoPlayers) {
+            if (p.getPlayerName().equals(name)) return;
+        }
+        Date now = new Date();
+        bingoPlayers.add(0, new PlayerResult(name, now, currentDrawnNumber));
+        this.lastBingoTime = now;
+        removeReachPlayer(name);
+    }
+
+    private void addReachPlayer(String name) {
+        for (PlayerResult p : reachPlayers) {
+            if (p.getPlayerName().equals(name)) return;
+        }
+        reachPlayers.add(0, new PlayerResult(name, new Date(), 0));
+    }
+
+    public void removeReachPlayer(String name) {
+        reachPlayers.removeIf(p -> p.getPlayerName().equals(name));
+    }
+
+    public List<String> getWaitNumbers(String name) {
+        return playerWaitNumbers.getOrDefault(name, new ArrayList<>());
+    }
+
+    public boolean isExpired() { return new Date().after(this.expireTime); }
+    
+    public boolean isPast2HoursFromLastBingo() {
+        if (bingoPlayers.isEmpty()) return false;
+        long twoHoursInMilliseconds = 2L * 60 * 60 * 1000;
+        long timePassed = new Date().getTime() - lastBingoTime.getTime();
+        return timePassed > twoHoursInMilliseconds;
+    }
+
+    public String getGameId() { return gameId; }
+    public List<Integer> getDrawnNumbers() { return drawnNumbers; }
+    public List<PlayerResult> getBingoPlayers() { return bingoPlayers; }
+    public List<PlayerResult> getReachPlayers() { return reachPlayers; }
+    public int getPlayerCount() { return playerCards.size(); }
+    public List<String> getAllPlayers() { return allPlayers; }
+
+    public void setPlayerCard(String playerName, List<List<String>> card) {
+        playerCards.put(playerName, card);
+        updateAllPlayersStatus();
     }
 }

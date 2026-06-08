@@ -22,7 +22,7 @@ public class BingoServlet extends HttpServlet {
         
         request.setCharacterEncoding("UTF-8");
         String action = request.getParameter("action");
-        String userType = request.getParameter("userType"); // 💡 userTypeを上でしっかり読み込みます
+        String userType = request.getParameter("userType"); 
         ServletContext application = getServletContext();
         HttpSession session = request.getSession();
         
@@ -36,11 +36,14 @@ public class BingoServlet extends HttpServlet {
             }
         }
 
-        // 🚀 2. 【大山さんの理想を完璧に実現（バグ修正版）】
-        // アクション（ボタン操作）が何も指定されておらず、かつ、5秒更新（userType=admin）でもない場合、
-        // つまり「大山さんがブラウザにURLを直接打ち込んで新しく開いた時」だけ、100%確実に初期画面をまっさらに開きます！
-        if ((action == null || action.trim().isEmpty()) && !"admin".equals(userType)) {
-            request.setAttribute("game", null); // 画面をまっさらにするおまじない
+        // 🚀 2. 【大山さんの理想とプレイヤー同期の完全両立】
+        // アクション（ボタン操作）が何も指定されておらず、
+        // かつ「司会者の5秒更新(userType=admin)」でもなく、
+        // かつ「プレイヤーのセッション（すでに名前が登録されている状態）」でもない場合、
+        // つまり【大山さんがブラウザのURLに直接打ち込んで新しく開いた時】だけ、100%確実に初期画面をまっさらに開きます！
+        String confirmedName = (String) session.getAttribute("myConfirmedName");
+        if ((action == null || action.trim().isEmpty()) && !"admin".equals(userType) && confirmedName == null) {
+            request.setAttribute("game", null); 
             request.getRequestDispatcher("admin.jsp").forward(request, response);
             return;
         }
@@ -111,39 +114,34 @@ public class BingoServlet extends HttpServlet {
             }
 
             if (game != null && game.getGameId().equals(inputId)) {
-                String confirmedName = (String) session.getAttribute("myConfirmedName");
-                List<List<String>> bingoCard = (List<List<String>>) session.getAttribute("card");
-
-                if (confirmedName == null || !confirmedName.equals(playerName) || bingoCard == null) {
-                    confirmedName = playerName;
-                    
-                    List<List<String>> card = new ArrayList<>();
-                    List<List<Integer>> columns = new ArrayList<>();
-                    
-                    for (int i = 0; i < 5; i++) {
-                        List<Integer> pool = new ArrayList<>();
-                        for (int j = 1; j <= 15; j++) {
-                            pool.add(i * 15 + j);
-                        }
-                        Collections.shuffle(pool);
-                        columns.add(pool.subList(0, 5));
+                confirmedName = playerName;
+                
+                List<List<String>> card = new ArrayList<>();
+                List<List<Integer>> columns = new ArrayList<>();
+                
+                for (int i = 0; i < 5; i++) {
+                    List<Integer> pool = new ArrayList<>();
+                    for (int j = 1; j <= 15; j++) {
+                        pool.add(i * 15 + j);
                     }
-
-                    for (int r = 0; r < 5; r++) {
-                        List<String> row = new ArrayList<>();
-                        for (int c = 0; c < 5; c++) {
-                            if (r == 2 && c == 2) {
-                                row.add("0"); 
-                            } else {
-                                row.add(String.valueOf(columns.get(c).get(r)));
-                            }
-                        }
-                        card.add(row);
-                    }
-                    
-                    session.setAttribute("card", card);
-                    session.setAttribute("myConfirmedName", confirmedName);
+                    Collections.shuffle(pool);
+                    columns.add(pool.subList(0, 5));
                 }
+
+                for (int r = 0; r < 5; r++) {
+                    List<String> row = new ArrayList<>();
+                    for (int c = 0; c < 5; c++) {
+                        if (r == 2 && c == 2) {
+                            row.add("0"); 
+                        } else {
+                            row.add(String.valueOf(columns.get(c).get(r)));
+                        }
+                    }
+                    card.add(row);
+                }
+                
+                session.setAttribute("card", card);
+                session.setAttribute("myConfirmedName", confirmedName);
                 
                 List<List<String>> currentCard = (List<List<String>>) session.getAttribute("card");
                 game.setPlayerCard(confirmedName, currentCard);
@@ -158,13 +156,12 @@ public class BingoServlet extends HttpServlet {
             return;
         }
 
-        // 7. その他のアクセス（5秒更新などの処理）
+        // 7. その他のアクセス（プレイヤー画面や司会者画面の5秒自動更新の受け皿）
         request.setAttribute("game", game);
         
         if ("admin".equals(userType)) {
             request.getRequestDispatcher("admin.jsp").forward(request, response);
         } else {
-            String confirmedName = (String) session.getAttribute("myConfirmedName");
             if (confirmedName == null) {
                 confirmedName = request.getParameter("playerName");
             }

@@ -15,15 +15,14 @@
     }
     if (playerName == null) { playerName = ""; }
 
-    // 🔄【新機能】司会者のリセットを検知してカードを自動配り直しする安全ルール
+    // 🔄 司会者のリセットを検知してカードを自動配り直しするルール
     if (game != null && game.getDrawnNumbers().isEmpty()) {
-        // サーバー側がリセット（数字が0個）されたのに、ブラウザ側が古いカードを記憶していたらリフレッシュ
         session.removeAttribute("card");
     }
 
     List<List<String>> bingoCard = (List<List<String>>) session.getAttribute("card");
 
-    // 🎲 もしリセット等でカードが消えていたら、今の名前のまま自動で新しいカードを生成する
+    // 🎲 リセット時に今の名前のまま自動で新しいカードを生成する
     if (bingoCard == null && game != null && !playerName.isEmpty()) {
         List<List<Integer>> columns = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
@@ -118,7 +117,6 @@
         <p style="font-size:13px; color:#ccc; margin-top:20px;">画面をタップするとカードに戻ります (5秒ごとに自動更新中)</p>
     </div>
     <script>
-        // ビンゴ中も裏で5秒おきに状態をチェックして、リセットされたら自動で花火を閉じる処理
         setInterval(function() {
             window.location.href = "BingoServlet?userType=player";
         }, 5000);

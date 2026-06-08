@@ -29,8 +29,6 @@ public class BingoGame implements Serializable {
         this.bingoPlayers = new CopyOnWriteArrayList<>();
         this.reachPlayers = new CopyOnWriteArrayList<>();
         this.allPlayers = new CopyOnWriteArrayList<>();
-        
-        // 💡 【ここが重要！】部屋を作った「たった今」の時刻をタイマーのスタートラインにセットします
         this.lastBingoTime = new Date(); 
 
         Calendar cal = Calendar.getInstance();
@@ -38,7 +36,12 @@ public class BingoGame implements Serializable {
         this.expireTime = cal.getTime();
     }
 
-    // ゲーム進行データだけをクリアする（IDとタイマーは維持）
+    // 👤 無記名のときに「ゲスト1」「ゲスト2」と安全に名前を生成する部品
+    public synchronized String generateAnonymousName() {
+        this.anonymousCount++;
+        return "ゲスト" + this.anonymousCount;
+    }
+
     public void clearGameDataOnly() {
         this.drawnNumbers.clear();       
         this.bingoPlayers.clear();       
@@ -46,9 +49,8 @@ public class BingoGame implements Serializable {
         this.allPlayers.clear();         
         this.playerCards.clear();        
         this.playerWaitNumbers.clear();  
-        
-        // 💡 リセットした「たった今」の時刻をタイマーのスタートラインに更新します
         this.lastBingoTime = new Date(); 
+        this.anonymousCount = 0;
     }
 
     public int drawNumber() {
@@ -63,15 +65,14 @@ public class BingoGame implements Serializable {
         java.util.Collections.shuffle(pool);
         int nextNum = pool.get(0);
         drawnNumbers.add(nextNum);
-        
-        // 💡 数字を引いた「たった今」の時刻に更新します
         this.lastBingoTime = new Date(); 
         
         updateAllPlayersStatus();
         return nextNum;
     }
 
-    private void updateAllPlayersStatus() {
+    // 👥 プレイヤー全員のビンゴ・リーチ状態をライン基準で正しく更新する
+    public void updateAllPlayersStatus() {
         bingoPlayers.clear();
         reachPlayers.clear();
         
@@ -79,29 +80,60 @@ public class BingoGame implements Serializable {
 
         for (String name : playerCards.keySet()) {
             List<List<String>> card = playerCards.get(name);
-            List<String> waits = calculateWaitNumbers(card);
+            
+            // 縦横斜めをチェックして「本物の待ち番号」を抽出
+            List<String> waits = calculateActualWaitNumbers(card);
             playerWaitNumbers.put(name, waits);
 
-            if (waits.isEmpty()) {
+            // 1列でも揃っていれば（checkBingoが真）ビンゴ達成者へ
+            if (checkBingo(card)) {
                 addBingoPlayer(name, currentDrawnNumber);
-            } else if (waits.size() == 1 || waits.size() == 2 || waits.size() == 3 || waits.size() == 4) {
-                boolean hasRealReach = checkActualReachLines(card);
-                if (hasRealReach) {
-                    addReachPlayer(name);
-                }
+            } 
+            // ビンゴしていないが、あと1マスで揃うラインがあればリーチ達成者へ
+            else if (checkActualReachLines(card)) {
+                addReachPlayer(name);
             }
         }
     }
 
+    // 🏆 1列揃っているラインが1つでもあるか判定（ビンゴ用）
+    private boolean checkBingo(List<List<String>> card) {
+        // 横
+        for (int i = 0; i < 5; i++) {
+            if (countHitInLine(card.get(i)) == 5) return true;
+        }
+        // 縦
+        for (int c = 0; c < 5; c++) {
+            List<String> col = new ArrayList<>();
+            for (int r = 0; r < 5; r++) { col.add(card.get(r).get(c)); }
+            if (countHitInLine(col) == 5) return true;
+        }
+        // 斜め
+        List<String> d1 = new ArrayList<>();
+        List<String> d2 = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            d1.add(card.get(i).get(i));
+            d2.add(card.get(i).get(4 - i));
+        }
+        if (countHitInLine(d1) == 5) return true;
+        if (countHitInLine(d2) == 5) return true;
+        
+        return false;
+    }
+
+    // 📏 あと1マスで揃うラインが1つでもあるか判定（リーチ用）
     private boolean checkActualReachLines(List<List<String>> card) {
+        // 横
         for (int i = 0; i < 5; i++) {
             if (countHitInLine(card.get(i)) == 4) return true;
         }
+        // 縦
         for (int c = 0; c < 5; c++) {
             List<String> col = new ArrayList<>();
             for (int r = 0; r < 5; r++) { col.add(card.get(r).get(c)); }
             if (countHitInLine(col) == 4) return true;
         }
+        // 斜め
         List<String> d1 = new ArrayList<>();
         List<String> d2 = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
@@ -110,6 +142,7 @@ public class BingoGame implements Serializable {
         }
         if (countHitInLine(d1) == 4) return true;
         if (countHitInLine(d2) == 4) return true;
+        
         return false;
     }
 
@@ -123,11 +156,33 @@ public class BingoGame implements Serializable {
         return hit;
     }
 
-    private List<String> calculateWaitNumbers(List<List<String>> card) {
+    // 🔮 あと何番が出れば一列揃うか、ラインごとの待ち番号リストを作る処理
+    private List<String> calculateActualWaitNumbers(List<List<String>> card) {
         List<String> waits = new ArrayList<>();
-        for (int r = 0; r < 5; r++) {
-            for (int c = 0; c < 5; c++) {
-                String cell = card.get(r).get(c);
+        // 横
+        for (int i = 0; i < 5; i++) { getWaitFromLine(card.get(i), waits); }
+        // 縦
+        for (int c = 0; c < 5; c++) {
+            List<String> col = new ArrayList<>();
+            for (int r = 0; r < 5; r++) { col.add(card.get(r).get(c)); }
+            getWaitFromLine(col, waits);
+        }
+        // 斜め
+        List<String> d1 = new ArrayList<>();
+        List<String> d2 = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            d1.add(card.get(i).get(i));
+            d2.add(card.get(i).get(4 - i));
+        }
+        getWaitFromLine(d1, waits);
+        getWaitFromLine(d2, waits);
+
+        return waits;
+    }
+
+    private void getWaitFromLine(List<String> line, List<String> waits) {
+        if (countHitInLine(line) == 4) {
+            for (String cell : line) {
                 if (!"0".equals(cell) && !drawnNumbers.contains(Integer.parseInt(cell))) {
                     if (!waits.contains(cell)) {
                         waits.add(cell);
@@ -135,7 +190,6 @@ public class BingoGame implements Serializable {
                 }
             }
         }
-        return waits;
     }
 
     private void addBingoPlayer(String name, int currentDrawnNumber) {
@@ -144,12 +198,15 @@ public class BingoGame implements Serializable {
         }
         Date now = new Date();
         bingoPlayers.add(0, new PlayerResult(name, now, currentDrawnNumber));
-        this.lastBingoTime = now; // ビンゴが出た時刻をタイマーに更新
+        this.lastBingoTime = now; 
         removeReachPlayer(name);
     }
 
     private void addReachPlayer(String name) {
         for (PlayerResult p : reachPlayers) {
+            if (p.getPlayerName().equals(name)) return;
+        }
+        for (PlayerResult p : bingoPlayers) {
             if (p.getPlayerName().equals(name)) return;
         }
         reachPlayers.add(0, new PlayerResult(name, new Date(), 0));
@@ -166,10 +223,7 @@ public class BingoGame implements Serializable {
     public boolean isExpired() { return new Date().after(this.expireTime); }
     
     public boolean isPast2HoursFromLastBingo() {
-        // 💡 【暴走対策】まだ誰もビンゴしていない、かつ数字も引いていない初期状態なら、
-        // 2時間判定をスルーして安全にゲームを続行させます。
         if (drawnNumbers.isEmpty() && bingoPlayers.isEmpty()) return false;
-        
         long twoHoursInMilliseconds = 2L * 60 * 60 * 1000;
         long timePassed = new Date().getTime() - lastBingoTime.getTime();
         return timePassed > twoHoursInMilliseconds;
@@ -184,6 +238,6 @@ public class BingoGame implements Serializable {
 
     public void setPlayerCard(String playerName, List<List<String>> card) {
         playerCards.put(playerName, card);
-        updateAllPlayersStatus();
+        updateAllPlayersStatus(); 
     }
 }

@@ -129,7 +129,7 @@
     <h2>🎯 ビンゴ大会 🎯</h2>
 
     <% if (game == null || gameId.isEmpty()) { %>
-        <div class=\"info-box\" style=\"background:#ffe3e3; color:#c0392b;\">
+        <div class="info-box" style="background:#ffe3e3; color:#c0392b;">
             <%= (error != null) ? error : "⏳ 司会者がゲームを開始するのを待っています..." %>
         </div>
         <form action="BingoServlet" method="get" style="margin-top:20px;">
@@ -159,9 +159,9 @@
 
         <% if (bingoCard != null) { %>
             <table class="bingo-table">
-                <% for (int r = 0; r < 5; r++) {
-                    %><tr><% 
-                        for (int c = 0; c < 5; c++) { 
+                <% for (int r = 0; r < 5; r++) { %>
+                    <tr>
+                        <% for (int c = 0; c < 5; c++) { 
                             String num = bingoCard.get(r).get(c);
                             boolean isHit = game.getDrawnNumbers().contains(Integer.parseInt(num)) || num.equals("0");
                             if (num.equals("0")) { %>
@@ -169,18 +169,23 @@
                             <% } else { %>
                                 <td class="bingo-cell <%= isHit ? "hit" : "" %>"><%= num %></td>
                             <% } 
-                        } \n                    %></tr><% \n                } %>
+                        } %>
+                    </tr>
+                <% } %>
             </table>
         <% } %>
 
         <div class="list-box">
             <h3 style="margin: 5px 0; font-size:14px;">📊 出た数字一覧（最新が赤）</h3>
             <div class="history-grid">
-                <% for (int i = 0; i < reverseDrawnNumbers.size(); i++) { \n                    int num = reverseDrawnNumbers.get(i);\n                    if (i == 0) { %>
+                <% for (int i = 0; i < reverseDrawnNumbers.size(); i++) { 
+                    int num = reverseDrawnNumbers.get(i);
+                    if (i == 0) { %>
                         <div class="history-cell newest" style="background:#ff6b6b; color:white;"><%= num %></div>
                     <% } else { %>
                         <div class="history-cell"><%= num %></div>
-                    <% }\n                } %>
+                    <% }
+                } %>
             </div>
         </div>
     <% } %>

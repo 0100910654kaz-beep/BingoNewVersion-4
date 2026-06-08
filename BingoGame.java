@@ -36,7 +36,6 @@ public class BingoGame implements Serializable {
         this.expireTime = cal.getTime();
     }
 
-    // 👤 無記名のときに「ゲスト1」「ゲスト2」と安全に名前を生成する部品
     public synchronized String generateAnonymousName() {
         this.anonymousCount++;
         return "ゲスト" + this.anonymousCount;
@@ -71,44 +70,51 @@ public class BingoGame implements Serializable {
         return nextNum;
     }
 
-    // 👥 プレイヤー全員のビンゴ・リーチ状態をライン基準で正しく更新する
+    // 👥 プレイヤー全員のビンゴ・リーチ状態を正しく更新する（完全ロック版）
     public void updateAllPlayersStatus() {
-        bingoPlayers.clear();
+        // リーチはその都度変動するので毎回クリア
         reachPlayers.clear();
         
         int currentDrawnNumber = drawnNumbers.isEmpty() ? -1 : drawnNumbers.get(drawnNumbers.size() - 1);
 
         for (String name : playerCards.keySet()) {
+            // 🚨【超重要】すでにビンゴ達成者一覧に名前がある人は、データ保護のため
+            // これ以降の判定（ビンゴ再登録やリーチ計算）を完全にスキップして、絶対に上書きさせない！
+            boolean alreadyBingo = false;
+            for (PlayerResult p : bingoPlayers) {
+                if (p.getPlayerName().equals(name)) {
+                    alreadyBingo = true;
+                    break;
+                }
+            }
+            if (alreadyBingo) {
+                continue; // 👈 このプレイヤーの処理は完全にスルーして次の人へ
+            }
+
             List<List<String>> card = playerCards.get(name);
-            
-            // 縦横斜めをチェックして「本物の待ち番号」を抽出
             List<String> waits = calculateActualWaitNumbers(card);
             playerWaitNumbers.put(name, waits);
 
-            // 1列でも揃っていれば（checkBingoが真）ビンゴ達成者へ
+            // 1. 新しく1列揃った人を検知した場合
             if (checkBingo(card)) {
                 addBingoPlayer(name, currentDrawnNumber);
             } 
-            // ビンゴしていないが、あと1マスで揃うラインがあればリーチ達成者へ
+            // 2. まだビンゴしていないが、リーチ状態の場合
             else if (checkActualReachLines(card)) {
                 addReachPlayer(name);
             }
         }
     }
 
-    // 🏆 1列揃っているラインが1つでもあるか判定（ビンゴ用）
     private boolean checkBingo(List<List<String>> card) {
-        // 横
         for (int i = 0; i < 5; i++) {
             if (countHitInLine(card.get(i)) == 5) return true;
         }
-        // 縦
         for (int c = 0; c < 5; c++) {
             List<String> col = new ArrayList<>();
             for (int r = 0; r < 5; r++) { col.add(card.get(r).get(c)); }
             if (countHitInLine(col) == 5) return true;
         }
-        // 斜め
         List<String> d1 = new ArrayList<>();
         List<String> d2 = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
@@ -121,19 +127,15 @@ public class BingoGame implements Serializable {
         return false;
     }
 
-    // 📏 あと1マスで揃うラインが1つでもあるか判定（リーチ用）
     private boolean checkActualReachLines(List<List<String>> card) {
-        // 横
         for (int i = 0; i < 5; i++) {
             if (countHitInLine(card.get(i)) == 4) return true;
         }
-        // 縦
         for (int c = 0; c < 5; c++) {
             List<String> col = new ArrayList<>();
             for (int r = 0; r < 5; r++) { col.add(card.get(r).get(c)); }
             if (countHitInLine(col) == 4) return true;
         }
-        // 斜め
         List<String> d1 = new ArrayList<>();
         List<String> d2 = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
@@ -156,18 +158,14 @@ public class BingoGame implements Serializable {
         return hit;
     }
 
-    // 🔮 あと何番が出れば一列揃うか、ラインごとの待ち番号リストを作る処理
     private List<String> calculateActualWaitNumbers(List<List<String>> card) {
         List<String> waits = new ArrayList<>();
-        // 横
         for (int i = 0; i < 5; i++) { getWaitFromLine(card.get(i), waits); }
-        // 縦
         for (int c = 0; c < 5; c++) {
             List<String> col = new ArrayList<>();
             for (int r = 0; r < 5; r++) { col.add(card.get(r).get(c)); }
             getWaitFromLine(col, waits);
         }
-        // 斜め
         List<String> d1 = new ArrayList<>();
         List<String> d2 = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
@@ -193,6 +191,7 @@ public class BingoGame implements Serializable {
     }
 
     private void addBingoPlayer(String name, int currentDrawnNumber) {
+        // 安全策として、ここでも既存プレイヤーの重複を絶対にブロック
         for (PlayerResult p : bingoPlayers) {
             if (p.getPlayerName().equals(name)) return;
         }
